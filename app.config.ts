@@ -111,7 +111,12 @@ module.exports = {
       "expo-image",
       "expo-secure-store",
       "expo-sqlite",
-      "expo-video",
+      [
+        "expo-video",
+        {
+          supportsPictureInPicture: true,
+        },
+      ],
       "expo-web-browser",
     ],
     updates: {

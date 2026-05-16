@@ -1,7 +1,7 @@
 import { useRecyclingState } from "@shopify/flash-list";
 import { Image, ImageSource } from "expo-image";
-import { useRef, useState, useEffect } from "react";
-import { useWindowDimensions, ScrollView } from "react-native";
+import { useRef, useState, useEffect, useCallback } from "react";
+import { useWindowDimensions, ScrollView, Platform } from "react-native";
 
 export type ImageItem = {
   type: "image";
@@ -24,18 +24,29 @@ export function MediaImage({ item, setIsScrollLocked }: MediaImageProps) {
   } | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  const resetZoom = useCallback(() => {
+    setIsScrollLocked(false);
+
+    /**
+     * React Native only implements ScrollView zooming on iOS. On Android,
+     * calling scrollResponderZoomTo throws `zoomToRect is not implemented`,
+     * which tears down the React Native surface and leaves a blank viewer.
+     */
+    if (Platform.OS !== "ios") return;
+
+    scrollViewRef.current?.scrollResponderZoomTo({
+      x: 0,
+      y: 0,
+      width: width,
+      height: height,
+      animated: false,
+    });
+  }, [height, setIsScrollLocked, width]);
+
   const [isZoomed, setIsZoomed] = useRecyclingState(
     false,
     [item.source],
-    () => {
-      scrollViewRef.current?.scrollResponderZoomTo({
-        x: 0,
-        y: 0,
-        width: width,
-        height: height,
-        animated: false,
-      });
-    },
+    resetZoom,
   );
 
   const highestResSource =
@@ -44,16 +55,8 @@ export function MediaImage({ item, setIsScrollLocked }: MediaImageProps) {
       : item.source[item.source.length - 1];
 
   useEffect(() => {
-    return () => {
-      scrollViewRef.current?.scrollResponderZoomTo({
-        x: 0,
-        y: 0,
-        width: width,
-        height: height,
-        animated: false,
-      });
-    };
-  }, []);
+    return resetZoom;
+  }, [resetZoom]);
 
   return (
     <ScrollView
@@ -100,13 +103,15 @@ export function MediaImage({ item, setIsScrollLocked }: MediaImageProps) {
           // Only one touch is active
           event.nativeEvent.touches.length === 1
         ) {
-          scrollViewRef.current?.scrollResponderZoomTo({
-            x: newTouchStart.x - width / 4,
-            y: newTouchStart.y - height / 4,
-            width: width / (isZoomed ? 1 : 2),
-            height: height / (isZoomed ? 1 : 2),
-            animated: true,
-          });
+          if (Platform.OS === "ios") {
+            scrollViewRef.current?.scrollResponderZoomTo({
+              x: newTouchStart.x - width / 4,
+              y: newTouchStart.y - height / 4,
+              width: width / (isZoomed ? 1 : 2),
+              height: height / (isZoomed ? 1 : 2),
+              animated: true,
+            });
+          }
         }
         previousTouchStart.current = newTouchStart;
       }}

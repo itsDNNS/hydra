@@ -1,5 +1,5 @@
 import { createContext, useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 import Purchases, {
   CustomerInfo,
   CustomerInfoUpdateListener,
@@ -9,10 +9,25 @@ import Purchases, {
 import { registerCustomer } from "../api/Customer";
 import { USING_CUSTOM_HYDRA_SERVER } from "../constants/HydraServer";
 
-Purchases.setLogLevel(Purchases.LOG_LEVEL.ERROR);
-Purchases.configure({
-  apiKey: "appl_okkBpjboHClPttmFHfsSWRaGSFd",
+const REVENUECAT_API_KEY = Platform.select({
+  ios: "appl_okkBpjboHClPttmFHfsSWRaGSFd",
+  android: undefined,
+  default: undefined,
 });
+
+let purchasesAvailable = false;
+
+if (REVENUECAT_API_KEY) {
+  try {
+    Purchases.setLogLevel(Purchases.LOG_LEVEL.ERROR);
+    Purchases.configure({
+      apiKey: REVENUECAT_API_KEY,
+    });
+    purchasesAvailable = true;
+  } catch (error) {
+    console.error("RevenueCat initialization failed:", error);
+  }
+}
 
 const HYDRA_299_1M_PRODUCT_ID = "hydra_299_1m";
 const HYDRA_PRO_ENTITLEMENT = "Hydra Pro";
@@ -31,14 +46,14 @@ interface SubscriptionContextType {
 }
 
 const initialSubscriptionContext: SubscriptionContextType = {
-  purchasesInitialized: false,
+  purchasesInitialized: !purchasesAvailable,
   customerInfo: null,
   customerId: null,
   isPro: false,
   buyPro: async () => {},
   proOffering: null,
   getCustomerInfo: async () => {},
-  isLoadingOffering: true,
+  isLoadingOffering: purchasesAvailable,
   inGracePeriod: false,
   gracePeriodEndsAt: null,
 };
@@ -53,7 +68,9 @@ export function SubscriptionsProvider({ children }: React.PropsWithChildren) {
     initialSubscriptionContext.customerInfo,
   );
   const [proOffering, setProOffering] = useState<PurchasesPackage | null>(null);
-  const [isLoadingOffering, setIsLoadingOffering] = useState(true);
+  const [isLoadingOffering, setIsLoadingOffering] = useState(
+    initialSubscriptionContext.isLoadingOffering,
+  );
 
   const customerId = customerInfo?.originalAppUserId ?? null;
 
@@ -72,6 +89,12 @@ export function SubscriptionsProvider({ children }: React.PropsWithChildren) {
     : null;
 
   const loadOffering = async () => {
+    if (!purchasesAvailable) {
+      setProOffering(null);
+      setIsLoadingOffering(false);
+      return;
+    }
+
     try {
       const offerings = await Purchases.getOfferings();
       const hydraProOffering = offerings.current?.availablePackages.find(
@@ -87,6 +110,9 @@ export function SubscriptionsProvider({ children }: React.PropsWithChildren) {
 
   const buyPro = async () => {
     try {
+      if (!purchasesAvailable) {
+        throw new Error("Hydra Pro purchases are unavailable on this build");
+      }
       if (!proOffering) {
         throw new Error("Hydra Pro offering not found");
       }
@@ -105,6 +131,8 @@ export function SubscriptionsProvider({ children }: React.PropsWithChildren) {
           return;
         }
         Alert.alert(error.message as string);
+      } else if (error instanceof Error) {
+        Alert.alert(error.message);
       } else {
         Alert.alert("Something went wrong");
       }
@@ -113,18 +141,34 @@ export function SubscriptionsProvider({ children }: React.PropsWithChildren) {
   };
 
   const getCustomerInfo = async (refresh = false) => {
-    setPurchasesInitialized(false);
-    if (refresh) {
-      Purchases.invalidateCustomerInfoCache();
+    if (!purchasesAvailable) {
+      setPurchasesInitialized(true);
+      setCustomerInfo(null);
+      return;
     }
-    const customerInfo = await Purchases.getCustomerInfo();
-    setCustomerInfo(customerInfo);
-    setPurchasesInitialized(true);
+
+    setPurchasesInitialized(false);
+    try {
+      if (refresh) {
+        Purchases.invalidateCustomerInfoCache();
+      }
+      const customerInfo = await Purchases.getCustomerInfo();
+      setCustomerInfo(customerInfo);
+    } catch (error) {
+      console.error("Error loading customer info:", error);
+    } finally {
+      setPurchasesInitialized(true);
+    }
   };
 
   useEffect(() => {
     getCustomerInfo();
     loadOffering();
+
+    if (!purchasesAvailable) {
+      return;
+    }
+
     const handleCustomerInfoUpdate: CustomerInfoUpdateListener = async (
       customerInfo,
     ) => {
