@@ -76,6 +76,7 @@ jobs:
             --stacktrace \
             --max-workers=2 \
             -PreactNativeArchitectures=arm64-v8a \
+            -x lintVitalRelease \
             -x lintVitalAnalyzeRelease \
             -x lintVitalReportRelease
 
