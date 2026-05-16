@@ -1,0 +1,91 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build dependencies
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.1.12297006" \
+            "cmake;3.22.1"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run TypeScript check
+        run: npm run tsc
+
+      - name: Verify Android media zoom guard
+        run: node scripts/verify-mediaimage-android-zoom-guard.js
+
+      - name: Build release APK
+        working-directory: android
+        env:
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Prepare APK artifact
+        run: |
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/hydra-release.apk
+          sha256sum artifacts/hydra-release.apk | tee artifacts/hydra-release.apk.sha256
+          cp android/app/build/outputs/apk/release/output-metadata.json artifacts/output-metadata.json
+          {
+            echo "## Android APK"
+            echo
+            echo "Artifact: hydra-release-apk-${{ github.run_number }}"
+            echo
+            echo "SHA256:"
+            echo '```'
+            cat artifacts/hydra-release.apk.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: hydra-release-apk-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
