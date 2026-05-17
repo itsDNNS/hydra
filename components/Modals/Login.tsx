@@ -16,60 +16,11 @@ import { ModalContext } from "../../contexts/ModalContext";
 import { ThemeContext } from "../../contexts/SettingsContexts/ThemeContext";
 import { WebView } from "react-native-webview";
 import RedditCookies from "../../utils/RedditCookies";
+import { shouldFinishRedditLogin } from "../../utils/RedditLoginFlow";
 
 const INJECTED_JAVASCRIPT = `
-  const modifyThroughShadowDOM = (selector, styleOrFunction) => {
-    const applyInTree = (root) => {
-      try {
-        // Regular DOM
-        root.querySelectorAll(selector).forEach(el => {
-          if (typeof styleOrFunction === 'function') {
-            styleOrFunction(el);
-          } else if (typeof styleOrFunction === 'object') {
-            Object.assign(el.style, styleOrFunction);
-          }
-        });
-        
-        // Shadow DOM
-        root.querySelectorAll('*').forEach(el => {
-          if (el.shadowRoot) {
-            applyInTree(el.shadowRoot);
-          }
-        });
-      } catch (e) {
-        console.warn('Error applying styles to elements:', e);
-      }
-    };
-    
-    applyInTree(document);
-    
-    // Watch for changes
-    new MutationObserver(() => applyInTree(document))
-      .observe(document.body, { childList: true, subtree: true });
-  };
-
-  modifyThroughShadowDOM(
-    '.flex.justify-between.items-end.pt-lg.pb-xs',
-    { display: 'none' },
-  );
-
-  modifyThroughShadowDOM(
-    'h1.text-24.text-center.text-neutral-content-strong',
-    { 'margin-top': '20px' },
-  );
-
-  modifyThroughShadowDOM(
-    'auth-flow-manager',
-    { 'z-index': 1 },
-  );
+  true;
 `;
-
-const ALLOWED_URLS = [
-  "reddit.com/login",
-  "redditinc.com/policies/user-agreement",
-  "redditinc.com/policies/privacy-policy",
-  "reddit.com/policies/privacy-policy",
-];
 
 export default function Login() {
   const { theme } = useContext(ThemeContext);
@@ -123,7 +74,8 @@ export default function Login() {
      */
     if (!canShow) return;
     const interval = setInterval(async () => {
-      if (await RedditCookies.hasSessionCookieBeenSet()) {
+      const hasSessionCookie = await RedditCookies.hasSessionCookieBeenSet();
+      if (shouldFinishRedditLogin({ hasSessionCookie })) {
         handleLoginFinished();
       }
     }, 500);
@@ -154,17 +106,9 @@ export default function Login() {
                 uri: "https://www.reddit.com/login?dest=https://www.reddit.com/r/HydraClient",
               }}
               style={styles.webView}
+              androidLayerType="hardware"
               sharedCookiesEnabled={true}
               thirdPartyCookiesEnabled={true}
-              onLoadStart={(event) => {
-                if (
-                  !ALLOWED_URLS.some((url) =>
-                    event.nativeEvent.url.includes(url),
-                  )
-                ) {
-                  handleLoginFinished();
-                }
-              }}
               injectedJavaScript={INJECTED_JAVASCRIPT}
               // Injected js doesn't run unless you pass a function here even if it doesn't do anything. No idea why.
               onMessage={() => {}}

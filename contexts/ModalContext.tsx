@@ -27,9 +27,9 @@ export function ModalProvider({ children }: React.PropsWithChildren) {
     Animated.spring(modalPosition, {
       toValue: modal ? 0 : height,
       bounciness: 2,
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
-  }, [modal]);
+  }, [modal, height, modalPosition]);
 
   /**
    * Since this provider only provides functions, we need to memoize the value
@@ -44,28 +44,30 @@ export function ModalProvider({ children }: React.PropsWithChildren) {
 
   return (
     <ModalContext.Provider value={value}>
-      <Animated.View
-        style={[
-          styles.modalContainer,
-          {
-            transform: [
-              {
-                translateY: modalPosition,
-              },
-            ],
-          },
-        ]}
-      >
-        {modal}
-      </Animated.View>
       {children}
+      {modal ? (
+        <Animated.View
+          pointerEvents="auto"
+          style={[
+            styles.modalContainer,
+            {
+              top: modalPosition,
+            },
+          ]}
+        >
+          {modal}
+        </Animated.View>
+      ) : null}
     </ModalContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
   modalContainer: {
-    position: "relative",
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
     zIndex: 1000,
   },
 });
